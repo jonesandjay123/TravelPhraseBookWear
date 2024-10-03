@@ -8,6 +8,7 @@ package com.jonesandjay123.travelphrasebook.presentation
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -44,6 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.Locale
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
@@ -54,8 +56,34 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     // 新增一個狀態變量，用於存儲接收到的句子清單
     private var phraseList by mutableStateOf<List<Phrase>>(emptyList())
 
+    private lateinit var tts: TextToSpeech
+
+    // 添加 speakText 方法
+    private fun speakText(text: String) {
+        if (::tts.isInitialized) {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1")
+        } else {
+            Log.e("WearApp", "TTS 尚未初始化")
+            Toast.makeText(this, "TTS 尚未初始化", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 初始化 TTS
+        tts = TextToSpeech(this) { status ->
+            if (status != TextToSpeech.ERROR) {
+                // 设置语言，您可以根据需要修改
+                val result = tts.setLanguage(Locale.CHINESE)
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Log.e("WearApp", "TTS 不支持所选语言")
+                    Toast.makeText(this, "TTS 不支持所选语言", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Log.e("WearApp", "TTS 初始化失败")
+            }
+        }
 
         Log.d("WearApp", "DataClient 監聽器已添加")
         // 註冊 DataClient 監聽器
@@ -82,8 +110,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 ) {
                     TimeText()
                     if (phraseList.isNotEmpty()) {
-                        // 显示句子列表
-                        PhraseListScreen(phraseList)
+                        // 将 speakText 方法传递给 PhraseListScreen
+                        PhraseListScreen(
+                            phrases = phraseList,
+                            onPhraseClick = { phrase ->
+                                speakText(phrase.zh)
+                            }
+                        )
                     } else {
                         // 显示提示信息
                         Text(
@@ -111,8 +144,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     override fun onDestroy() {
         super.onDestroy()
-        // 移除 DataClient 監聽器
-        Log.d("WearApp", "－－－－DataClient 監聽器已移除－－－")
+        // 关闭 TTS
+        if (::tts.isInitialized) {
+            tts.stop()
+            tts.shutdown()
+        }
+        // 移除 DataClient 监听器
+        Log.d("WearApp", "－－－－DataClient 监听器已移除－－－")
         Wearable.getDataClient(this).removeListener(this)
     }
 
@@ -143,32 +181,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 Log.e("WearApp", "Error checking connection: ${e.message}")
                 isConnected = false
                 nodeInfo = null
-            }
-        }
-    }
-
-    @Composable
-    fun ConnectionInfoText(isConnected: Boolean, nodeInfo: String?) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "旅行短語手冊v0.0.10.3",
-                style = MaterialTheme.typography.title3,
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = if (isConnected) "已聯通手機" else "未與手機連線",
-                style = MaterialTheme.typography.body1,
-                textAlign = TextAlign.Center
-            )
-            if (isConnected && nodeInfo != null) {
-                Text(
-                    text = nodeInfo,
-                    style = MaterialTheme.typography.body2,
-                    textAlign = TextAlign.Center
-                )
             }
         }
     }
@@ -215,22 +227,20 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     // 顯示句子清單的組件
     @Composable
-    fun PhraseListScreen(phrases: List<Phrase>) {
-        // 使用 LazyColumn 来实现可滚动的列表
+    fun PhraseListScreen(phrases: List<Phrase>, onPhraseClick: (Phrase) -> Unit) {
         LazyColumn(
             modifier = Modifier.fillMaxSize()
         ) {
             items(phrases) { phrase ->
-                PhraseItem(phrase)
+                PhraseItem(phrase, onPhraseClick)
             }
         }
     }
 
     @Composable
-    fun PhraseItem(phrase: Phrase) {
-        // 使用 Card 或者 Surface 提升视觉层次
+    fun PhraseItem(phrase: Phrase, onPhraseClick: (Phrase) -> Unit) {
         androidx.wear.compose.material.Card(
-            onClick = { /* 点击事件，未来可以添加 TTS 播放等功能 */ },
+            onClick = { onPhraseClick(phrase) }, // 修改此行
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp, horizontal = 8.dp)
