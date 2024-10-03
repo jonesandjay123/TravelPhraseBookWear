@@ -1,9 +1,3 @@
-/* While this template provides a good starting point for using Wear Compose, you can always
- * take a look at https://github.com/android/wear-os-samples/tree/main/ComposeStarter and
- * https://github.com/android/wear-os-samples/tree/main/ComposeAdvanced to find the most up to date
- * changes to the libraries and their usages.
- */
-
 package com.jonesandjay123.travelphrasebook.presentation
 
 import android.annotation.SuppressLint
@@ -15,7 +9,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,13 +25,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TimeText
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
-import com.google.firebase.crashlytics.buildtools.reloc.com.google.common.reflect.TypeToken
 import com.google.gson.Gson
 import com.jonesandjay123.travelphrasebook.presentation.theme.TravelPhraseBookWearTheme
 import kotlinx.coroutines.CoroutineScope
@@ -49,24 +40,13 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
-    // 定義狀態變量
     private var isConnected by mutableStateOf(false)
     private var nodeInfo by mutableStateOf<String?>(null)
 
-    // 新增一個狀態變量，用於存儲接收到的句子清單
+    // 新增一個狀態變量，用於儲存接收到的句子清單
     private var phraseList by mutableStateOf<List<Phrase>>(emptyList())
 
-    private lateinit var tts: TextToSpeech
-
-    // 添加 speakText 方法
-    private fun speakText(text: String) {
-        if (::tts.isInitialized) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1")
-        } else {
-            Log.e("WearApp", "TTS 尚未初始化")
-            Toast.makeText(this, "TTS 尚未初始化", Toast.LENGTH_SHORT).show()
-        }
-    }
+    private lateinit var tts: TextToSpeech // 添加此行
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,30 +54,18 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         // 初始化 TTS
         tts = TextToSpeech(this) { status ->
             if (status != TextToSpeech.ERROR) {
-                // 设置语言，您可以根据需要修改
                 val result = tts.setLanguage(Locale.CHINESE)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e("WearApp", "TTS 不支持所选语言")
-                    Toast.makeText(this, "TTS 不支持所选语言", Toast.LENGTH_SHORT).show()
+                    Log.e("WearApp", "TTS 不支持所選語言")
+                    Toast.makeText(this, "TTS 不支持所選語言", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                Log.e("WearApp", "TTS 初始化失败")
+                Log.e("WearApp", "TTS 初始化失敗")
             }
         }
 
-        Log.d("WearApp", "DataClient 監聽器已添加")
         // 註冊 DataClient 監聽器
-        Wearable.getDataClient(this).dataItems.addOnCompleteListener { task ->
-            if (task.isSuccessful && task.result != null) {
-                Log.d("WearApp", "成功檢索到手錶端 DataItems")
-                Log.d("WearApp", "task: ${task.result.count}")
-                for (dataItem in task.result!!) {
-                    Log.d("WearApp", "DataItem URI: ${dataItem.uri}")
-                }
-            } else {
-                Log.d("WearApp", "檢索手錶端 DataItems 失敗")
-            }
-        }
+        Wearable.getDataClient(this).addListener(this)
 
         // 設置內容視圖
         setContent {
@@ -108,9 +76,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                         .background(MaterialTheme.colors.background),
                     contentAlignment = Alignment.Center
                 ) {
-                    TimeText()
                     if (phraseList.isNotEmpty()) {
-                        // 将 speakText 方法传递给 PhraseListScreen
+                        // 顯示句子列表
                         PhraseListScreen(
                             phrases = phraseList,
                             onPhraseClick = { phrase ->
@@ -120,7 +87,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     } else {
                         // 显示提示信息
                         Text(
-                            text = "尚未接收到句子清单",
+                            text = "尚未接收到句子清單",
                             style = MaterialTheme.typography.body2,
                             textAlign = TextAlign.Center,
                             color = Color.White,
@@ -131,16 +98,15 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             }
         }
 
-        // 發送請求獲取連接資訊
+        // 發送請求獲取連接訊息
         requestConnectionInfo()
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d("WearApp", "－－－－onResume 監聽器－－－")
+        Log.d("WearApp", "－－－－onResume 监听器－－－")
         Wearable.getDataClient(this).addListener(this)
     }
-
 
     override fun onDestroy() {
         super.onDestroy()
@@ -149,13 +115,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             tts.stop()
             tts.shutdown()
         }
-        // 移除 DataClient 监听器
-        Log.d("WearApp", "－－－－DataClient 监听器已移除－－－")
+        // 移除 DataClient 監聽器
+        Log.d("WearApp", "－－－－DataClient 監聽器已移除－－－")
         Wearable.getDataClient(this).removeListener(this)
     }
 
     private fun requestConnectionInfo() {
-        Log.d("WearApp", "－－－－requestConnectionInfo 觸發－－－")
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // 獲取連接的節點
@@ -185,7 +150,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         }
     }
 
-    // 定義 Phrase 數據類
+    // 定義 Phrase 數據
     data class Phrase(
         val en: String,
         val jp: String,
@@ -194,16 +159,15 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         val order: Int
     )
 
-    // 解析 JSON 字符串為 Phrase 列表
+    // 解析 JSON 字串
     private fun parseJsonToPhrases(jsonString: String): List<Phrase> {
         val gson = Gson()
-        return gson.fromJson(jsonString, object : TypeToken<List<Phrase>>() {}.type)
+        return gson.fromJson(jsonString, object : com.google.gson.reflect.TypeToken<List<Phrase>>() {}.type)
     }
 
-    // 實現 OnDataChangedListener 接口
+    // 實現 OnDataChangedListener
     @SuppressLint("VisibleForTests")
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        Log.d("WearApp", "－－－－onDataChanged 被调用－－－－－")
         for (event in dataEvents) {
             if (event.type == DataEvent.TYPE_CHANGED) {
                 val uri = event.dataItem.uri
@@ -213,7 +177,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     Log.d("WearApp", "收到測試數據: $phrasesJson")
                     if (phrasesJson != null) {
                         phraseList = parseJsonToPhrases(phrasesJson)
-                        Log.d("WearApp", "收到新的句子清單，共 ${phraseList.size} 條")
 
                         // 添加 Toast 提示
                         runOnUiThread {
@@ -240,7 +203,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     @Composable
     fun PhraseItem(phrase: Phrase, onPhraseClick: (Phrase) -> Unit) {
         androidx.wear.compose.material.Card(
-            onClick = { onPhraseClick(phrase) }, // 修改此行
+            onClick = { onPhraseClick(phrase) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp, horizontal = 8.dp)
@@ -254,6 +217,16 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     .fillMaxWidth()
                     .padding(8.dp)
             )
+        }
+    }
+
+    // 添加 speakText 方法
+    private fun speakText(text: String) {
+        if (::tts.isInitialized) {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1")
+        } else {
+            Log.e("WearApp", "TTS 尚未初始化")
+            Toast.makeText(this, "TTS 尚未初始化", Toast.LENGTH_SHORT).show()
         }
     }
 }
