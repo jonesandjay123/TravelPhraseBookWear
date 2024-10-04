@@ -9,12 +9,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -25,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.rememberPickerState
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
@@ -43,10 +47,14 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private var isConnected by mutableStateOf(false)
     private var nodeInfo by mutableStateOf<String?>(null)
 
-    // 新增一個狀態變量，用於儲存接收到的句子清單
+    // 儲存接收到的句子清單
     private var phraseList by mutableStateOf<List<Phrase>>(emptyList())
 
-    private lateinit var tts: TextToSpeech // 添加此行
+    private lateinit var tts: TextToSpeech
+
+    private var currentLanguage by mutableStateOf("zh")
+    private val languageOptions = listOf("zh", "en", "jp", "th")
+    private val languageDisplayNames = listOf("中", "英", "日", "泰")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,25 +82,45 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colors.background),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    if (phraseList.isNotEmpty()) {
-                        // 顯示句子列表
-                        PhraseListScreen(
-                            phrases = phraseList,
-                            onPhraseClick = { phrase ->
-                                speakText(phrase.zh)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        LanguagePicker(
+                            options = languageDisplayNames,
+                            selectedIndex = languageOptions.indexOf(currentLanguage),
+                            onLanguageSelected = { index ->
+                                currentLanguage = languageOptions[index]
                             }
                         )
-                    } else {
-                        // 显示提示信息
-                        Text(
-                            text = "尚未接收到句子清單",
-                            style = MaterialTheme.typography.body2,
-                            textAlign = TextAlign.Center,
-                            color = Color.White,
-                            modifier = Modifier.padding(16.dp)
-                        )
+
+                        if (phraseList.isNotEmpty()) {
+                            // 句子列表
+                            PhraseListScreen(
+                                phrases = phraseList,
+                                onPhraseClick = { phrase ->
+                                    val textToSpeak = when (currentLanguage) {
+                                        "zh" -> phrase.zh
+                                        "en" -> phrase.en
+                                        "jp" -> phrase.jp
+                                        "th" -> phrase.th
+                                        else -> phrase.zh
+                                    }
+                                    speakText(textToSpeak, currentLanguage)
+                                },
+                                currentLanguage = currentLanguage
+                            )
+                        } else {
+                            // 显示提示信息
+                            Text(
+                                text = "尚未接收到句子清单",
+                                style = MaterialTheme.typography.body2,
+                                textAlign = TextAlign.Center,
+                                color = Color.White,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -102,11 +130,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         requestConnectionInfo()
     }
 
-    override fun onResume() {
-        super.onResume()
-        Log.d("WearApp", "－－－－onResume 监听器－－－")
-        Wearable.getDataClient(this).addListener(this)
-    }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -190,26 +213,42 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     // 顯示句子清單的組件
     @Composable
-    fun PhraseListScreen(phrases: List<Phrase>, onPhraseClick: (Phrase) -> Unit) {
+    fun PhraseListScreen(
+        phrases: List<Phrase>,
+        onPhraseClick: (Phrase) -> Unit,
+        currentLanguage: String
+    ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize()
         ) {
             items(phrases) { phrase ->
-                PhraseItem(phrase, onPhraseClick)
+                PhraseItem(phrase, onPhraseClick, currentLanguage)
             }
         }
     }
 
     @Composable
-    fun PhraseItem(phrase: Phrase, onPhraseClick: (Phrase) -> Unit) {
+    fun PhraseItem(
+        phrase: Phrase,
+        onPhraseClick: (Phrase) -> Unit,
+        currentLanguage: String
+    ) {
         androidx.wear.compose.material.Card(
             onClick = { onPhraseClick(phrase) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp, horizontal = 8.dp)
         ) {
+            val displayText = when (currentLanguage) {
+                "zh" -> phrase.zh
+                "en" -> phrase.en
+                "jp" -> phrase.jp
+                "th" -> phrase.th
+                else -> phrase.zh
+            }
+
             Text(
-                text = "${phrase.order}. ${phrase.zh}",
+                text = "${phrase.order}. $displayText",
                 style = MaterialTheme.typography.body1,
                 color = Color.White,
                 textAlign = TextAlign.Start,
@@ -220,8 +259,45 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         }
     }
 
+    @Composable
+    fun LanguagePicker(
+        options: List<String>,
+        selectedIndex: Int,
+        onLanguageSelected: (Int) -> Unit
+    ) {
+        // 創建 PickerState
+        val pickerState = rememberPickerState(
+            initialNumberOfOptions = options.size,
+            initiallySelectedOption = selectedIndex
+        )
+
+        // 使用 LaunchedEffect 監聽 selectedOption 的變化
+        LaunchedEffect(pickerState.selectedOption) {
+            onLanguageSelected(pickerState.selectedOption)
+        }
+
+        // 使用新的 Picker API
+        androidx.wear.compose.material.Picker(
+            state = pickerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.3f) // 高度調整為螢幕的 30%
+                .padding(vertical = 8.dp),
+            contentDescription = "語言選擇器",
+            separation = 8.dp,
+            option = { optionIndex ->
+                Text(
+                    text = options[optionIndex],
+                    style = MaterialTheme.typography.body1,
+                    color = if (optionIndex == pickerState.selectedOption) Color.White else Color.Gray,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        )
+    }
+
     // 添加 speakText 方法
-    private fun speakText(text: String) {
+    private fun speakText(text: String, currentLanguage: String) {
         if (::tts.isInitialized) {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1")
         } else {
