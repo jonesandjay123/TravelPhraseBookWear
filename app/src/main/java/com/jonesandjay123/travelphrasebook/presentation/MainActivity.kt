@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.io.File
 import java.util.Locale
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         super.onCreate(savedInstanceState)
 
         // 初始化 TTS
+//        initTtsEngine() // 初始化 TTS 引擎－包含預熱
         tts = TextToSpeech(this) { status ->
             if (status != TextToSpeech.ERROR) {
                 val result = tts.setLanguage(Locale.TRADITIONAL_CHINESE)
@@ -76,7 +78,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         // 註冊 DataClient 監聽器
         Wearable.getDataClient(this).addListener(this)
 
-        // 設定內容視圖
         // 設定內容視圖
         setContent {
             TravelPhraseBookWearTheme {
@@ -136,7 +137,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         // 發送請求獲取連接資訊
         requestConnectionInfo()
     }
-
 
     override fun onDestroy() {
         super.onDestroy()
@@ -218,6 +218,74 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 }
             }
         }
+    }
+
+    // 初始化並預熱 TTS 引擎
+    private fun initTtsEngine() {
+        val callback = TextToSpeech.OnInitListener { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                Log.i("WearApp", "TTS 引擎初始化成功")
+
+                // 獲取默認語音
+                val defaultVoice = tts.voice
+                if (defaultVoice == null) {
+                    Log.w("WearApp", "defaultVoice == null")
+                    return@OnInitListener
+                }
+
+                // 設置 TTS 引擎使用默認語言
+                tts.language = defaultVoice.locale
+
+                // 預熱所有需要的語言
+                val locales = listOf(
+                    Locale.TRADITIONAL_CHINESE,
+                    Locale.ENGLISH,
+                    Locale.JAPANESE,
+                    Locale("th") // 泰語
+                )
+
+                locales.forEach { locale ->
+                    val result = tts.setLanguage(locale)
+                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Log.e("WearApp", "TTS 不支援語言：$locale")
+                    } else {
+                        try {
+                            // 創建臨時文件
+                            val tempFile = File.createTempFile("tmpsynthesize", null, cacheDir)
+
+                            // 合成樣本文本到文件
+                            tts.synthesizeToFile(
+                                "1 2 3", // 樣本文本
+                                null,
+                                tempFile,
+                                "sampletext_$locale"
+                            )
+
+                            // 設置在退出時刪除
+                            tempFile.deleteOnExit()
+                        } catch (e: Exception) {
+                            Log.e("WearApp", "預熱 TTS 引擎時發生錯誤：", e)
+                        }
+                    }
+                }
+
+                // 恢復到當前語言
+                val currentLocale = when (currentLanguage) {
+                    "zh" -> Locale.TRADITIONAL_CHINESE
+                    "en" -> Locale.ENGLISH
+                    "jp" -> Locale.JAPANESE
+                    "th" -> Locale("th")
+                    else -> Locale.TRADITIONAL_CHINESE
+                }
+                tts.language = currentLocale
+                // 打印預熱完成的 log
+                Log.i("WearApp", "所有語言已預熱完畢!!")
+            } else {
+                Log.e("WearApp", "TTS 初始化失敗")
+            }
+        }
+
+        tts = TextToSpeech(applicationContext, callback)
     }
 
     // 顯示句子清單的組件
