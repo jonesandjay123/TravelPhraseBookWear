@@ -77,55 +77,58 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         Wearable.getDataClient(this).addListener(this)
 
         // 設定內容視圖
+        // 設定內容視圖
         setContent {
             TravelPhraseBookWearTheme {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colors.background),
-                    contentAlignment = Alignment.TopCenter
+                        .background(MaterialTheme.colors.background)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        LanguagePicker(
-                            options = languageDisplayNames,
-                            selectedIndex = languageOptions.indexOf(currentLanguage),
-                            onLanguageSelected = { index ->
-                                currentLanguage = languageOptions[index]
-                                // 保存 currentLanguage 到 SharedPreferences
-                                val sharedPreferences = getSharedPreferences("app_preferences", MODE_PRIVATE)
-                                sharedPreferences.edit().putString("current_language", currentLanguage).apply()
-                            }
+                    if (phraseList.isNotEmpty()) {
+                        // 句子列表
+                        PhraseListScreen(
+                            phrases = phraseList,
+                            onPhraseClick = { phrase ->
+                                val textToSpeak = when (currentLanguage) {
+                                    "zh" -> phrase.zh
+                                    "en" -> phrase.en
+                                    "jp" -> phrase.jp
+                                    "th" -> phrase.th
+                                    else -> phrase.zh
+                                }
+                                speakText(textToSpeak, currentLanguage)
+                            },
+                            currentLanguage = currentLanguage,
+                            modifier = Modifier.weight(1f)
                         )
-
-                        if (phraseList.isNotEmpty()) {
-                            // 句子列表
-                            PhraseListScreen(
-                                phrases = phraseList,
-                                onPhraseClick = { phrase ->
-                                    val textToSpeak = when (currentLanguage) {
-                                        "zh" -> phrase.zh
-                                        "en" -> phrase.en
-                                        "jp" -> phrase.jp
-                                        "th" -> phrase.th
-                                        else -> phrase.zh
-                                    }
-                                    speakText(textToSpeak, currentLanguage)
-                                },
-                                currentLanguage = currentLanguage
-                            )
-                        } else {
-                            // 顯示提示訊息
-                            Text(
-                                text = "尚未接收到句子清單",
-                                style = MaterialTheme.typography.body2,
-                                textAlign = TextAlign.Center,
-                                color = Color.White,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
+                    } else {
+                        // 顯示提示訊息
+                        Text(
+                            text = "尚未接收到句子清單",
+                            style = MaterialTheme.typography.body2,
+                            textAlign = TextAlign.Center,
+                            color = Color.White,
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .weight(1f)
+                        )
                     }
+
+                    // 將 LanguagePicker 放在底部
+                    LanguagePicker(
+                        options = languageDisplayNames,
+                        selectedIndex = languageOptions.indexOf(currentLanguage),
+                        onLanguageSelected = { index ->
+                            currentLanguage = languageOptions[index]
+                            // 保存 currentLanguage 到 SharedPreferences
+                            val sharedPreferences = getSharedPreferences("app_preferences", MODE_PRIVATE)
+                            sharedPreferences.edit().putString("current_language", currentLanguage).apply()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp) // 您可以根據需要調整高度
+                    )
                 }
             }
         }
@@ -222,10 +225,11 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     fun PhraseListScreen(
         phrases: List<Phrase>,
         onPhraseClick: (Phrase) -> Unit,
-        currentLanguage: String
+        currentLanguage: String,
+        modifier: Modifier = Modifier
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize()
+            modifier = modifier.fillMaxSize()
         ) {
             items(phrases) { phrase ->
                 PhraseItem(phrase, onPhraseClick, currentLanguage)
@@ -291,7 +295,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     fun LanguagePicker(
         options: List<String>,
         selectedIndex: Int,
-        onLanguageSelected: (Int) -> Unit
+        onLanguageSelected: (Int) -> Unit,
+        modifier: Modifier = Modifier
     ) {
         // 創建 PickerState
         val pickerState = rememberPickerState(
@@ -307,9 +312,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         // 使用新的 Picker API
         androidx.wear.compose.material.Picker(
             state = pickerState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.3f),
+            modifier = modifier,
             contentDescription = "語言選擇器",
             separation = 8.dp,
             option = { optionIndex ->
