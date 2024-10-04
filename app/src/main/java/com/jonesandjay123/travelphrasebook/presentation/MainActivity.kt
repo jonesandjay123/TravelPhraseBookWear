@@ -8,19 +8,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,20 +53,30 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         // 初始化 TTS
         tts = TextToSpeech(this) { status ->
             if (status != TextToSpeech.ERROR) {
-                val result = tts.setLanguage(Locale.CHINESE)
+                val result = tts.setLanguage(Locale.TRADITIONAL_CHINESE)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e("WearApp", "TTS 不支持所選語言")
-                    Toast.makeText(this, "TTS 不支持所選語言", Toast.LENGTH_SHORT).show()
+                    Log.e("WearApp", "TTS 不支援所選語言")
+                    Toast.makeText(this, "TTS 不支援所選語言", Toast.LENGTH_SHORT).show()
                 }
             } else {
                 Log.e("WearApp", "TTS 初始化失敗")
             }
         }
 
+        // 從 SharedPreferences 讀取 currentLanguage
+        val sharedPreferences = getSharedPreferences("app_preferences", MODE_PRIVATE)
+        currentLanguage = sharedPreferences.getString("current_language", "zh") ?: "zh"
+
+        // 從 SharedPreferences 讀取 phrases_json
+        val phrasesJson = sharedPreferences.getString("phrases_json", null)
+        if (phrasesJson != null) {
+            phraseList = parseJsonToPhrases(phrasesJson)
+        }
+
         // 註冊 DataClient 監聽器
         Wearable.getDataClient(this).addListener(this)
 
-        // 設置內容視圖
+        // 設定內容視圖
         setContent {
             TravelPhraseBookWearTheme {
                 Box(
@@ -92,6 +93,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                             selectedIndex = languageOptions.indexOf(currentLanguage),
                             onLanguageSelected = { index ->
                                 currentLanguage = languageOptions[index]
+                                // 保存 currentLanguage 到 SharedPreferences
+                                val sharedPreferences = getSharedPreferences("app_preferences", MODE_PRIVATE)
+                                sharedPreferences.edit().putString("current_language", currentLanguage).apply()
                             }
                         )
 
@@ -112,9 +116,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                                 currentLanguage = currentLanguage
                             )
                         } else {
-                            // 显示提示信息
+                            // 顯示提示訊息
                             Text(
-                                text = "尚未接收到句子清单",
+                                text = "尚未接收到句子清單",
                                 style = MaterialTheme.typography.body2,
                                 textAlign = TextAlign.Center,
                                 color = Color.White,
@@ -126,14 +130,14 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             }
         }
 
-        // 發送請求獲取連接訊息
+        // 發送請求獲取連接資訊
         requestConnectionInfo()
     }
 
 
     override fun onDestroy() {
         super.onDestroy()
-        // 关闭 TTS
+        // 關閉 TTS
         if (::tts.isInitialized) {
             tts.stop()
             tts.shutdown()
@@ -157,7 +161,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     val nodeName = node.displayName
                     Log.d("WearApp", "Node ID: $nodeId, Node Name: $nodeName")
 
-                    // 更新狀態變量
+                    // 更新狀態變數
                     isConnected = true
                     nodeInfo = "Node ID: $nodeId\nNode Name: $nodeName"
                 } else {
@@ -173,7 +177,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         }
     }
 
-    // 定義 Phrase 數據
+    // 定義 Phrase 資料類
     data class Phrase(
         val en: String,
         val jp: String,
@@ -188,8 +192,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         return gson.fromJson(jsonString, object : com.google.gson.reflect.TypeToken<List<Phrase>>() {}.type)
     }
 
-    // 實現 OnDataChangedListener
-    @SuppressLint("VisibleForTests")
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         for (event in dataEvents) {
             if (event.type == DataEvent.TYPE_CHANGED) {
@@ -197,9 +199,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 if (uri.path?.startsWith("/phrases") == true) {
                     val dataMapItem = DataMapItem.fromDataItem(event.dataItem)
                     val phrasesJson = dataMapItem.dataMap.getString("phrases_json")
-                    Log.d("WearApp", "收到測試數據: $phrasesJson")
+                    Log.d("WearApp", "收到測試資料: $phrasesJson")
                     if (phrasesJson != null) {
                         phraseList = parseJsonToPhrases(phrasesJson)
+
+                        // 保存 phrasesJson 到 SharedPreferences
+                        val sharedPreferences = getSharedPreferences("app_preferences", MODE_PRIVATE)
+                        sharedPreferences.edit().putString("phrases_json", phrasesJson).apply()
 
                         // 添加 Toast 提示
                         runOnUiThread {
@@ -247,15 +253,37 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 else -> phrase.zh
             }
 
-            Text(
-                text = "${phrase.order}. $displayText",
-                style = MaterialTheme.typography.body1,
-                color = Color.White,
-                textAlign = TextAlign.Start,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
-            )
+            ) {
+                if (currentLanguage != "zh") {
+                    Text(
+                        text = "${phrase.order}. ${phrase.zh}",
+                        style = MaterialTheme.typography.caption1,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = displayText,
+                        style = MaterialTheme.typography.body1,
+                        color = Color.White,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = "${phrase.order}. $displayText",
+                        style = MaterialTheme.typography.body1,
+                        color = Color.White,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
     }
 
@@ -281,8 +309,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             state = pickerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.3f) // 高度調整為螢幕的 30%
-                .padding(vertical = 8.dp),
+                .fillMaxHeight(0.3f),
             contentDescription = "語言選擇器",
             separation = 8.dp,
             option = { optionIndex ->
@@ -290,16 +317,31 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     text = options[optionIndex],
                     style = MaterialTheme.typography.body1,
                     color = if (optionIndex == pickerState.selectedOption) Color.White else Color.Gray,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier.padding(8.dp)
                 )
             }
         )
     }
 
-    // 添加 speakText 方法
     private fun speakText(text: String, currentLanguage: String) {
         if (::tts.isInitialized) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1")
+            // 根據 currentLanguage 設定 TTS 的語言
+            val locale = when (currentLanguage) {
+                "zh" -> Locale.TRADITIONAL_CHINESE
+                "en" -> Locale.ENGLISH
+                "jp" -> Locale.JAPANESE
+                "th" -> Locale("th")
+                else -> Locale.TRADITIONAL_CHINESE
+            }
+
+            val result = tts.setLanguage(locale)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e("WearApp", "TTS 不支援所選語言")
+                Toast.makeText(this, "TTS 不支援所選語言", Toast.LENGTH_SHORT).show()
+            } else {
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1")
+            }
         } else {
             Log.e("WearApp", "TTS 尚未初始化")
             Toast.makeText(this, "TTS 尚未初始化", Toast.LENGTH_SHORT).show()
